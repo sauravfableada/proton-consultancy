@@ -49,8 +49,47 @@ class ClientAuthController extends Controller
         // Save to Cache for 10 minutes
         Cache::put('otp_' . $identifier, $otp, now()->addMinutes(10));
 
-        // Simulate sending OTP (Log it instead of sending SMS/Email for now)
-        Log::info("OTP for {$identifier} is: {$otp}");
+        if ($isEmail) {
+            try {
+                // Dynamically set mail configuration from settings table
+                config([
+                    'mail.default' => 'smtp',
+                    'mail.mailers.smtp.transport' => 'smtp',
+                    'mail.mailers.smtp.scheme' => null, // Prevent "smtp.gmail.com" scheme error
+                    'mail.mailers.smtp.host' => \App\Models\Setting::where('key', 'mail_host')->value('value'),
+                    'mail.mailers.smtp.port' => \App\Models\Setting::where('key', 'mail_port')->value('value'),
+                    'mail.mailers.smtp.encryption' => \App\Models\Setting::where('key', 'mail_encryption')->value('value'),
+                    'mail.mailers.smtp.username' => \App\Models\Setting::where('key', 'mail_username')->value('value'),
+                    'mail.mailers.smtp.password' => \App\Models\Setting::where('key', 'mail_password')->value('value'),
+                    'mail.from.address' => \App\Models\Setting::where('key', 'mail_from_address')->value('value'),
+                    'mail.from.name' => \App\Models\Setting::where('key', 'mail_from_name')->value('value'),
+                ]);
+
+                \Illuminate\Support\Facades\Mail::to($identifier)->send(new \App\Mail\OtpMail($otp));
+            } catch (\Exception $e) {
+                Log::error("Email failed for {$identifier}: " . $e->getMessage());
+                Log::info("FALLBACK OTP for {$identifier} is: {$otp}");
+            }
+        } else {
+            // Send SMS via Twilio using Settings from DB
+            try {
+                $sid = \App\Models\Setting::where('key', 'twilio_sid')->value('value');
+                $token = \App\Models\Setting::where('key', 'twilio_auth_token')->value('value');
+                $from = \App\Models\Setting::where('key', 'twilio_phone_number')->value('value');
+
+                $twilio = new \Twilio\Rest\Client($sid, $token);
+                $twilio->messages->create(
+                    $identifier, // To
+                    [
+                        'from' => $from,
+                        'body' => "Your Proton Consultancy verification code is: {$otp}"
+                    ]
+                );
+            } catch (\Exception $e) {
+                Log::error("Twilio SMS failed for {$identifier}: " . $e->getMessage());
+                Log::info("FALLBACK OTP for {$identifier} is: {$otp}");
+            }
+        }
 
         return response()->json([
             'status' => 'success',

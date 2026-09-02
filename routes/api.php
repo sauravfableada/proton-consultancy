@@ -15,4 +15,8 @@ Route::middleware('auth:sanctum')->group(function () {
         return $request->user();
     });
     Route::post('/logout', [\App\Http\Controllers\Api\AuthController::class, 'logout']);
+
+    // Settings Routes
+    Route::post('/settings/smtp', [\App\Http\Controllers\Api\SettingController::class, 'updateSmtp']);
+    Route::post('/settings/twilio', [\App\Http\Controllers\Api\SettingController::class, 'updateTwilio']);
 });
